@@ -23,7 +23,7 @@ jobs:
           mirrorchyan_rid: MAA
 
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          owner: ${{ github.repository_owner }}
+          owner: MaaAssistantArknights
           repo: ${{ github.event.repository.name }}
           upload_token: ${{ secrets.MirrorChyanUploadToken }}
           os: ${{ matrix.os }}
