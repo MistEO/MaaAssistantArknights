@@ -210,41 +210,25 @@ public class VersionUpdateSettingsUserControlModel : PropertyChangedBase
         }
     }
 
-    /// <summary>
-    /// Gets a value indicating whether to update nightly.
-    /// </summary>
-    public bool UpdateNightly
-    {
-        get => _versionType == UpdateVersionType.Nightly;
-    }
-
-    /// <summary>
-    /// Gets a value indicating whether to update beta version.
-    /// </summary>
-    public bool UpdateBeta
-    {
-        get => _versionType == UpdateVersionType.Beta;
-    }
-
     private bool _updateCheck = Convert.ToBoolean(ConfigurationHelper.GetGlobalValue(ConfigurationKeys.UpdateCheck, bool.TrueString));
 
-    public List<GenericCombinedData<string>> ResourceUpdateSourceList { get; } = [
-        new() { Display = "Github", Value = "Github" },
+    public List<GenericCombinedData<string>> UpdateSourceList { get; } = [
+        new() { Display = LocalizationHelper.GetString("GlobalSource"), Value = "Github" },
         new() { Display = LocalizationHelper.GetString("MirrorChyan"), Value = "MirrorChyan" },
     ];
 
-    private string _resourceUpdateSource = ConfigurationHelper.GetGlobalValue(ConfigurationKeys.ResourceUpdateSource, "Github");
+    private string _updateSource = ConfigurationHelper.GetGlobalValue(ConfigurationKeys.UpdateSource, "Github");
 
     /// <summary>
     /// Gets or sets the type of version to update.
     /// </summary>
-    public string ResourceUpdateSource
+    public string UpdateSource
     {
-        get => _resourceUpdateSource;
+        get => _updateSource;
         set
         {
-            SetAndNotify(ref _resourceUpdateSource, value);
-            ConfigurationHelper.SetGlobalValue(ConfigurationKeys.ResourceUpdateSource, value.ToString());
+            SetAndNotify(ref _updateSource, value);
+            ConfigurationHelper.SetGlobalValue(ConfigurationKeys.UpdateSource, value);
         }
     }
 
@@ -311,7 +295,7 @@ public class VersionUpdateSettingsUserControlModel : PropertyChangedBase
     public List<CombinedData> ProxyTypeList { get; } =
         [
             new() { Display = "HTTP Proxy", Value = "http" },
-            new() { Display = "Socks5 Proxy", Value = "socks5" },
+            new() { Display = "SOCKS5 Proxy", Value = "socks5" },
         ];
 
     private string _proxyType = ConfigurationHelper.GetGlobalValue(ConfigurationKeys.ProxyType, "http");
@@ -376,98 +360,77 @@ public class VersionUpdateSettingsUserControlModel : PropertyChangedBase
     /// <returns>A <see cref="Task"/> representing the asynchronous operation.</returns>
     public async Task ManualUpdate()
     {
-        var ret = await Instances.VersionUpdateViewModel.CheckAndDownloadUpdate();
+        var ret = await Instances.VersionUpdateViewModel.CheckAndDownloadVersionUpdate();
 
-        var toastMessage = string.Empty;
-        switch (ret)
+        var toastMessage = ret switch
         {
-            case VersionUpdateViewModel.CheckUpdateRetT.NoNeedToUpdate:
-                break;
-
-            case VersionUpdateViewModel.CheckUpdateRetT.NoNeedToUpdateDebugVersion:
-                toastMessage = LocalizationHelper.GetString("NoNeedToUpdateDebugVersion");
-                break;
-
-            case VersionUpdateViewModel.CheckUpdateRetT.AlreadyLatest:
-                toastMessage = LocalizationHelper.GetString("AlreadyLatest");
-                break;
-
-            case VersionUpdateViewModel.CheckUpdateRetT.UnknownError:
-                toastMessage = LocalizationHelper.GetString("NewVersionDetectFailedTitle");
-                break;
-
-            case VersionUpdateViewModel.CheckUpdateRetT.NetworkError:
-                toastMessage = LocalizationHelper.GetString("CheckNetworking");
-                break;
-
-            case VersionUpdateViewModel.CheckUpdateRetT.FailedToGetInfo:
-                toastMessage = LocalizationHelper.GetString("GetReleaseNoteFailed");
-                break;
-
-            case VersionUpdateViewModel.CheckUpdateRetT.OK:
-                _ = Instances.VersionUpdateViewModel.AskToRestart();
-                break;
-
-            case VersionUpdateViewModel.CheckUpdateRetT.NewVersionIsBeingBuilt:
-                toastMessage = LocalizationHelper.GetString("NewVersionIsBeingBuilt");
-                break;
-
-            case VersionUpdateViewModel.CheckUpdateRetT.OnlyGameResourceUpdated:
-                toastMessage = LocalizationHelper.GetString("GameResourceUpdated");
-                break;
-
-            default:
-                throw new ArgumentOutOfRangeException();
-        }
+            VersionUpdateViewModel.CheckUpdateRetT.NoNeedToUpdate => string.Empty,
+            VersionUpdateViewModel.CheckUpdateRetT.NoNeedToUpdateDebugVersion => LocalizationHelper.GetString("NoNeedToUpdateDebugVersion"),
+            VersionUpdateViewModel.CheckUpdateRetT.AlreadyLatest => LocalizationHelper.GetString("AlreadyLatest"),
+            VersionUpdateViewModel.CheckUpdateRetT.UnknownError => LocalizationHelper.GetString("NewVersionDetectFailedTitle"),
+            VersionUpdateViewModel.CheckUpdateRetT.NetworkError => LocalizationHelper.GetString("CheckNetworking"),
+            VersionUpdateViewModel.CheckUpdateRetT.FailedToGetInfo => LocalizationHelper.GetString("GetReleaseNoteFailed"),
+            VersionUpdateViewModel.CheckUpdateRetT.OK => string.Empty,
+            VersionUpdateViewModel.CheckUpdateRetT.NewVersionIsBeingBuilt => LocalizationHelper.GetString("NewVersionIsBeingBuilt"),
+            VersionUpdateViewModel.CheckUpdateRetT.OnlyGameResourceUpdated => LocalizationHelper.GetString("GameResourceUpdated"),
+            VersionUpdateViewModel.CheckUpdateRetT.NoMirrorChyanCdk => LocalizationHelper.GetString("MirrorChyanSoftwareUpdateTip"),
+            _ => string.Empty,
+        };
 
         if (toastMessage != string.Empty)
         {
             ToastNotification.ShowDirect(toastMessage);
+        }
+
+        if (ret == VersionUpdateViewModel.CheckUpdateRetT.OK)
+        {
+            _ = Instances.VersionUpdateViewModel.AskToRestart();
         }
     }
 
     public async Task ManualUpdateResource()
     {
         IsCheckingForUpdates = true;
-        var success = false;
-        switch (ResourceUpdateSource)
+
+        var (ret, uri) = await ResourceUpdater.CheckFromMirrorChyanAsync();
+        var toastMessage = ret switch
         {
-            case "Github":
-                if (await ResourceUpdater.UpdateFromGithubAsync())
-                {
-                    success = true;
-                }
+            VersionUpdateViewModel.CheckUpdateRetT.NoNeedToUpdate => string.Empty,
+            VersionUpdateViewModel.CheckUpdateRetT.NoNeedToUpdateDebugVersion => LocalizationHelper.GetString("NoNeedToUpdateDebugVersion"),
+            VersionUpdateViewModel.CheckUpdateRetT.AlreadyLatest => LocalizationHelper.GetString("AlreadyLatest"),
+            VersionUpdateViewModel.CheckUpdateRetT.UnknownError => LocalizationHelper.GetString("NewVersionDetectFailedTitle"),
+            VersionUpdateViewModel.CheckUpdateRetT.NetworkError => LocalizationHelper.GetString("CheckNetworking"),
+            VersionUpdateViewModel.CheckUpdateRetT.FailedToGetInfo => LocalizationHelper.GetString("GetReleaseNoteFailed"),
+            VersionUpdateViewModel.CheckUpdateRetT.OK => string.Empty,
+            VersionUpdateViewModel.CheckUpdateRetT.NewVersionIsBeingBuilt => LocalizationHelper.GetString("NewVersionIsBeingBuilt"),
+            VersionUpdateViewModel.CheckUpdateRetT.OnlyGameResourceUpdated => LocalizationHelper.GetString("GameResourceUpdated"),
+            VersionUpdateViewModel.CheckUpdateRetT.NoMirrorChyanCdk => LocalizationHelper.GetString("MirrorChyanSoftwareUpdateTip"),
+            _ => string.Empty,
+        };
 
-                break;
-            case "MirrorChyan":
-                if (await ResourceUpdater.UpdateFromMirrorChyanAsync())
-                {
-                    success = true;
-                }
-
-                break;
+        if (toastMessage != string.Empty)
+        {
+            ToastNotification.ShowDirect(toastMessage);
         }
+
+        if (ret != VersionUpdateViewModel.CheckUpdateRetT.OK)
+        {
+            SettingsViewModel.VersionUpdateSettings.IsCheckingForUpdates = false;
+            return;
+        }
+
+        bool success = UpdateSource switch
+        {
+            "Github" => await ResourceUpdater.UpdateFromGithubAsync(),
+            "MirrorChyan" => await ResourceUpdater.DownloadFromMirrorChyanAsync(uri),
+            _ => await ResourceUpdater.UpdateFromGithubAsync(),
+        };
 
         if (success)
         {
-            if (AutoInstallUpdatePackage)
-            {
-                await Bootstrapper.RestartAfterIdleAsync();
-            }
-            else
-            {
-                var result = MessageBoxHelper.Show(
-                    LocalizationHelper.GetString("GameResourceUpdated"),
-                    LocalizationHelper.GetString("Tip"),
-                    MessageBoxButton.OKCancel,
-                    MessageBoxImage.Question,
-                    ok: LocalizationHelper.GetString("Ok"),
-                    cancel: LocalizationHelper.GetString("ManualRestart"));
-                if (result == MessageBoxResult.OK)
-                {
-                    Bootstrapper.ShutdownAndRestartWithoutArgs();
-                }
-            }
+            Instances.AsstProxy.LoadResource();
+            DataHelper.ReloadBattleData();
+            ToastNotification.ShowDirect(LocalizationHelper.GetString("GameResourceUpdated"));
         }
 
         IsCheckingForUpdates = false;

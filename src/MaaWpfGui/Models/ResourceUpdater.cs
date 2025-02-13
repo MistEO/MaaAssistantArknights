@@ -22,6 +22,7 @@ using System.Net.Http;
 using System.Threading.Tasks;
 using System.Web;
 using MaaWpfGui.Constants;
+using MaaWpfGui.Extensions;
 using MaaWpfGui.Helper;
 using MaaWpfGui.Main;
 using MaaWpfGui.ViewModels;
@@ -86,7 +87,7 @@ namespace MaaWpfGui.Models
 
         // 只有 Release 版本才会检查更新
         // ReSharper disable once UnusedMember.Global
-        public static async void UpdateAndToastAsync()
+        public static async Task UpdateAndToastAsync()
         {
             var ret = await UpdateAsync();
 
@@ -496,13 +497,23 @@ namespace MaaWpfGui.Models
             var url = $"{MaaUrls.MirrorChyanResourceUpdate}?current_version={currentVersion}&cdk={cdk}&user_agent=MaaWpfGui";
 
             var response = await Instances.HttpService.GetAsync(new(url), logUri: false);
+            _logger.Information($"current_version: {currentVersion}, cdk: {cdk.Mask()}");
+
             if (response is null)
             {
-                ToastNotification.ShowDirect(LocalizationHelper.GetString("GameResourceFailed"));
-                return (CheckUpdateRetT.NetworkError, null);
+                _logger.Error("response is null, try mirrorc line2");
+                url = url.Replace(MaaUrls.MirrorChyanLine1, MaaUrls.MirrorChyanLine2);
+                response = await Instances.HttpService.GetAsync(new(url), logUri: false);
+                if (response is null)
+                {
+                    _logger.Error("mirrorc line2 failed too");
+                    ToastNotification.ShowDirect(LocalizationHelper.GetString("GameResourceFailed"));
+                    return (CheckUpdateRetT.NetworkError, null);
+                }
             }
 
             var jsonStr = await response.Content.ReadAsStringAsync();
+            _logger.Information(jsonStr);
             JObject? data = null;
             try
             {
@@ -510,7 +521,7 @@ namespace MaaWpfGui.Models
             }
             catch (Exception ex)
             {
-                _logger.Error(ex, $"Failed to deserialize json: {jsonStr}");
+                _logger.Error("Failed to deserialize json: " + ex.Message);
             }
 
             if (data is null)
@@ -537,6 +548,8 @@ namespace MaaWpfGui.Models
             }
 
             // 到这里已经确定有新版本了
+            _logger.Information($"New version found: {version}");
+
             if (string.IsNullOrEmpty(cdk))
             {
                 ToastNotification.ShowDirect(LocalizationHelper.GetString("MirrorChyanResourceUpdateTip"));
@@ -544,13 +557,13 @@ namespace MaaWpfGui.Models
             }
 
             var uri = data["data"]?["url"]?.ToString();
-            if (string.IsNullOrEmpty(uri))
+            if (!string.IsNullOrEmpty(uri))
             {
-                ToastNotification.ShowDirect(LocalizationHelper.GetString("GameResourceFailed"));
-                return (CheckUpdateRetT.UnknownError, null);
+                return (CheckUpdateRetT.OK, uri);
             }
 
-            return (CheckUpdateRetT.OK, uri);
+            ToastNotification.ShowDirect(LocalizationHelper.GetString("GameResourceFailed"));
+            return (CheckUpdateRetT.UnknownError, null);
         }
 
         public static async Task<bool> DownloadFromMirrorChyanAsync(string? url)
@@ -629,7 +642,19 @@ namespace MaaWpfGui.Models
             return await DownloadFromMirrorChyanAsync(uri);
         }
 
-        public static async Task<CheckUpdateRetT> CheckAndDownloadUpdate()
+
+        /// <summary>
+        /// 检查并下载资源更新。
+        /// </summary>
+        /// <returns>返回一个 <see cref="CheckUpdateRetT"/> 枚举值，指示更新检查和下载的结果。
+        /// <list type="bullet">
+        /// <item><description><see cref="CheckUpdateRetT.AlreadyLatest"/>：已是最新版本。</description></item>
+        /// <item><description><see cref="CheckUpdateRetT.OK"/>：检查成功。（海外源不会自动下载）</description></item>
+        /// <item><description><see cref="CheckUpdateRetT.OnlyGameResourceUpdated"/>：下载成功。</description></item>
+        /// <item><description><see cref="CheckUpdateRetT.NetworkError"/>：网络错误。</description></item>
+        /// <item><description><see cref="CheckUpdateRetT.UnknownError"/>：其他错误。</description></item>
+        /// </list></returns>
+        public static async Task<CheckUpdateRetT> CheckAndDownloadResourceUpdate()
         {
             SettingsViewModel.VersionUpdateSettings.IsCheckingForUpdates = true;
 
@@ -641,11 +666,10 @@ namespace MaaWpfGui.Models
                 return ret;
             }
 
-            switch (SettingsViewModel.VersionUpdateSettings.ResourceUpdateSource)
+            switch (SettingsViewModel.VersionUpdateSettings.UpdateSource)
             {
                 case "Github":
                     break;
-
                 case "MirrorChyan":
                     if (await DownloadFromMirrorChyanAsync(uri))
                     {
@@ -694,10 +718,10 @@ namespace MaaWpfGui.Models
                 file.CopyTo(tempPath, true); // 覆盖现有文件
             }
 
-            foreach (DirectoryInfo subdir in dirs)
+            foreach (DirectoryInfo subDir in dirs)
             {
-                string tempPath = Path.Combine(destDirName, subdir.Name);
-                DirectoryMerge(subdir.FullName, tempPath);
+                string tempPath = Path.Combine(destDirName, subDir.Name);
+                DirectoryMerge(subDir.FullName, tempPath);
             }
         }
     }

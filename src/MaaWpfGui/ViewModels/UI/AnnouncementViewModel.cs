@@ -11,10 +11,18 @@
 // but WITHOUT ANY WARRANTY
 // </copyright>
 
+using System;
+using System.Collections.ObjectModel;
+using System.IO;
+using System.Linq;
 using System.Threading.Tasks;
+using System.Windows.Input;
+using HandyControl.Controls;
+using HandyControl.Tools.Command;
 using MaaWpfGui.Configuration;
 using MaaWpfGui.Constants;
 using MaaWpfGui.Helper;
+using Serilog;
 using Stylet;
 
 namespace MaaWpfGui.ViewModels.UI
@@ -26,7 +34,156 @@ namespace MaaWpfGui.ViewModels.UI
     // ReSharper disable once ClassNeverInstantiated.Global
     public class AnnouncementViewModel : Screen
     {
-        private string _announcementInfo = ConfigFactory.Root.AnnouncementInfo.Info;
+        private static readonly ILogger _logger = Log.ForContext<AnnouncementViewModel>();
+
+        private static readonly object _lock = new();
+
+        public string ImageSource { get; set; }
+
+        public class AnnouncementSection
+        {
+            public string Title { get; set; }
+
+            public string Content { get; set; }
+        }
+
+        public AnnouncementViewModel()
+        {
+            UpdateImageSource();
+
+            UpdateScrollStateCommand = new RelayCommand<ScrollViewer>(scrollViewer =>
+            {
+                if (scrollViewer == null)
+                {
+                    return;
+                }
+
+                // 计算是否滚动到底部
+                IsScrolledToBottom |= scrollViewer.VerticalOffset >= scrollViewer.ScrollableHeight - 10;
+            });
+
+            ScrollToTopCommand = new RelayCommand<ScrollViewer>(scrollViewer =>
+            {
+                if (scrollViewer == null)
+                {
+                    return;
+                }
+
+                scrollViewer.ScrollToTop();
+            });
+            AnnouncementSections = new(ParseAnnouncementInfo(AnnouncementInfo));
+        }
+
+        private void UpdateImageSource()
+        {
+            ImageSource = SettingsViewModel.GuiSettings.Language switch
+            {
+                "zh-cn" or "zh-tw" => "/Res/Img/NoSkland.jpg",
+                _ => "/Res/Img/NoSkLandEn.jpg",
+            };
+        }
+
+        private static ObservableCollection<AnnouncementSection> ParseAnnouncementInfo(string markdown)
+        {
+            var sections = markdown.Split(["### "], StringSplitOptions.RemoveEmptyEntries)
+                .Select(section =>
+                {
+                    var lines = section.Split('\n');
+                    return new AnnouncementSection
+                    {
+                        Title = lines.FirstOrDefault(),
+                        Content = "### " + string.Join("\n", lines).Trim([' ', '\n', '-']),
+                    };
+                }).ToList();
+
+            sections.Insert(0, new()
+            {
+                Title = "ALL~ the Announcements",
+                Content = markdown,
+            });
+
+            return new(sections);
+        }
+
+        public ICommand UpdateScrollStateCommand { get; }
+
+        public ICommand ScrollToTopCommand { get; }
+
+        private bool _isScrolledToBottom;
+
+        public bool IsScrolledToBottom
+        {
+            get => _isScrolledToBottom;
+            set => SetAndNotify(ref _isScrolledToBottom, value);
+        }
+
+        private ObservableCollection<AnnouncementSection> _announcementSections;
+
+        public ObservableCollection<AnnouncementSection> AnnouncementSections
+        {
+            get => _announcementSections;
+            set
+            {
+                SetAndNotify(ref _announcementSections, value);
+                SelectedAnnouncementSection = AnnouncementSections.FirstOrDefault();
+            }
+        }
+
+        private AnnouncementSection _selectedAnnouncementSection;
+
+        public AnnouncementSection SelectedAnnouncementSection
+        {
+            get => _selectedAnnouncementSection;
+            set => SetAndNotify(ref _selectedAnnouncementSection, value);
+        }
+
+        private static readonly string _announcementInFile = SettingsViewModel.GuiSettings.Language switch
+        {
+            "zh-cn" or "zh-tw" => Path.Combine(Environment.CurrentDirectory, "cache", "announcement.md"),
+            _ => Path.Combine(Environment.CurrentDirectory, "cache", "announcement_en.md"),
+        };
+
+        private static string AnnouncementInFile
+        {
+            get
+            {
+                if (!File.Exists(_announcementInFile))
+                {
+                    return null;
+                }
+
+                try
+                {
+                    lock (_lock)
+                    {
+                        return File.ReadAllText(_announcementInFile);
+                    }
+                }
+                catch (Exception e)
+                {
+                    _logger.Error(e, "Failed to read announcement from file");
+                }
+
+                return null;
+            }
+
+            set
+            {
+                try
+                {
+                    lock (_lock)
+                    {
+                        File.WriteAllText(_announcementInFile, value);
+                    }
+                }
+                catch (Exception e)
+                {
+                    _logger.Error(e, "Failed to write announcement to file");
+                }
+            }
+        }
+
+        private string _announcementInfo = AnnouncementInFile ?? string.Empty;
 
         /// <summary>
         /// Gets the announcement info.
@@ -38,7 +195,8 @@ namespace MaaWpfGui.ViewModels.UI
             private set
             {
                 SetAndNotify(ref _announcementInfo, value);
-                ConfigFactory.Root.AnnouncementInfo.Info = value;
+                AnnouncementInFile = value;
+                AnnouncementSections = new(ParseAnnouncementInfo(AnnouncementInfo));
             }
         }
 

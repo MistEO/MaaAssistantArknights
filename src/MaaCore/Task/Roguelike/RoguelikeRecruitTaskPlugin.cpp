@@ -70,7 +70,7 @@ bool asst::RoguelikeRecruitTaskPlugin::_run()
 
     ++m_recruit_count;
 
-    if (m_config->get_theme() == "Sarkaz" && m_config->get_mode() == RoguelikeMode::Investment &&
+    if (m_config->get_theme() == RoguelikeTheme::Sarkaz && m_config->get_mode() == RoguelikeMode::Investment &&
         (m_config->get_squad() == "点刺成锭分队" ||
          (m_config->get_squad() == "后勤分队" && m_config->get_start_with_seed()))) {
         ProcessTask(*this, { "Sarkaz@RoguelikeRecruit-GiveUp" }).run();
@@ -98,7 +98,7 @@ bool asst::RoguelikeRecruitTaskPlugin::_run()
         }
     }
 
-    bool team_full_without_rookie = m_config->get_team_full_without_rookie();
+    bool team_full_without_rookie = m_config->status().team_full_without_rookie;
     // Log.info("team_full_without_rookie", team_full_without_rookie);
 
     // 编队信息 (已有角色)
